@@ -1,31 +1,24 @@
-'use client'
-
-import { useState } from 'react'
 import SportsChatbot from './_components/SportsChatbot'
 import SportsNewsPanel from './_components/SportsNewsPanel'
+import { getSportsNews } from './lib/sports-news'
 
-export default function Home() {
+export default async function Home() {
+  const { articles } = await getSportsNews(10)
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-800 to-emerald-900">
       <div className="container mx-auto px-4 py-8">
-        <header className="text-center mb-8">
-          <h1 className="text-4xl md:text-5xl font-bold text-white mb-2">
-            ⚽ Sports Chatbot 🏀
-          </h1>
-          <p className="text-green-100 text-lg">
-            Tu asistente deportivo con noticias en tiempo real
-          </p>
+        <header className="mb-8 text-center">
+          <h1 className="mb-2 text-4xl font-bold text-white md:text-5xl">⚽ Sports Chatbot 🏀</h1>
+          <p className="text-lg text-green-100">Tu asistente deportivo con noticias en tiempo real</p>
         </header>
-        
-        {/* Layout de dos columnas */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Panel izquierdo de noticias - 1 columna en móvil, 1 de 3 en desktop */}
-          <div className="lg:col-span-1 h-[600px] lg:h-[700px]">
-            <SportsNewsPanel />
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="h-[600px] lg:col-span-1 lg:h-[700px]">
+            <SportsNewsPanel initialNews={articles} />
           </div>
-          
-          {/* Panel derecho del chatbot - 1 columna en móvil, 2 de 3 en desktop */}
-          <div className="lg:col-span-2 h-[600px] lg:h-[700px]">
+
+          <div className="h-[600px] lg:col-span-2 lg:h-[700px]">
             <SportsChatbot />
           </div>
         </div>

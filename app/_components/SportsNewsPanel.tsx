@@ -1,26 +1,19 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
-interface NewsItem {
-  title: string
-  description: string
-  url: string
-  publishedAt: string
-  source: string
-  image: string | null
+import type { SportsNewsItem } from '@/app/lib/sports-news'
+
+interface SportsNewsPanelProps {
+  initialNews: SportsNewsItem[]
 }
 
-export default function SportsNewsPanel() {
-  const [news, setNews] = useState<NewsItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+export default function SportsNewsPanel({ initialNews }: SportsNewsPanelProps) {
+  const [news, setNews] = useState<SportsNewsItem[]>(initialNews)
+  const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetchNews()
-  }, [])
-
-  const fetchNews = async () => {
+  async function fetchNews() {
     try {
       setIsLoading(true)
       const response = await fetch('/api/sports-news')
@@ -43,89 +36,83 @@ export default function SportsNewsPanel() {
       month: 'short',
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false
+      hour12: false,
     })
   }
 
   return (
-    <div className="h-full bg-gradient-to-b from-green-800 to-emerald-900 rounded-2xl shadow-2xl overflow-hidden flex flex-col border-4 border-green-600">
-      {/* Header del Panel */}
-      <div className="bg-gradient-to-r from-green-700 to-emerald-700 px-6 py-4 flex items-center justify-between">
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border-4 border-green-600 bg-gradient-to-b from-green-800 to-emerald-900 shadow-2xl">
+      <div className="flex items-center justify-between bg-gradient-to-r from-green-700 to-emerald-700 px-6 py-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-xl shadow-lg">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl shadow-lg">
             📰
           </div>
           <div>
-            <h3 className="text-white font-bold text-lg">Noticias Deportivas</h3>
-            <p className="text-green-100 text-xs">Últimas noticias de ESPN</p>
+            <h3 className="text-lg font-bold text-white">Noticias Deportivas</h3>
+            <p className="text-xs text-green-100">Ultimas noticias de ESPN</p>
           </div>
         </div>
         <button
-          onClick={fetchNews}
-          className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
+          onClick={() => void fetchNews()}
+          className="rounded-full bg-white/20 p-2 transition-colors hover:bg-white/30"
           title="Actualizar noticias"
         >
-          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
         </button>
       </div>
 
-      {/* Lista de Noticias */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {isLoading ? (
           <div className="space-y-3">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="bg-white/10 backdrop-blur-sm rounded-xl p-4 animate-pulse">
-                <div className="h-4 bg-white/20 rounded mb-2 w-3/4"></div>
-                <div className="h-3 bg-white/20 rounded mb-2 w-1/2"></div>
-                <div className="h-3 bg-white/20 rounded w-1/4"></div>
+            {[1, 2, 3, 4, 5].map((item) => (
+              <div key={item} className="rounded-xl bg-white/10 p-4 backdrop-blur-sm animate-pulse">
+                <div className="mb-2 h-4 w-3/4 rounded bg-white/20"></div>
+                <div className="mb-2 h-3 w-1/2 rounded bg-white/20"></div>
+                <div className="h-3 w-1/4 rounded bg-white/20"></div>
               </div>
             ))}
           </div>
         ) : error ? (
-          <div className="text-center py-8">
-            <div className="text-4xl mb-2">⚠️</div>
-            <p className="text-white/80 text-sm">{error}</p>
+          <div className="py-8 text-center">
+            <div className="mb-2 text-4xl">⚠️</div>
+            <p className="text-sm text-white/80">{error}</p>
             <button
-              onClick={fetchNews}
-              className="mt-3 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-white text-sm transition-colors"
+              onClick={() => void fetchNews()}
+              className="mt-3 rounded-lg bg-white/20 px-4 py-2 text-sm text-white transition-colors hover:bg-white/30"
             >
               Reintentar
             </button>
           </div>
         ) : news.length === 0 ? (
-          <div className="text-center py-8">
-            <div className="text-4xl mb-2">📭</div>
-            <p className="text-white/80 text-sm">No hay noticias disponibles</p>
+          <div className="py-8 text-center">
+            <div className="mb-2 text-4xl">📰</div>
+            <p className="text-sm text-white/80">No hay noticias disponibles</p>
           </div>
         ) : (
           news.map((item, index) => (
             <div
-              key={index}
-              className="bg-white/10 backdrop-blur-sm rounded-xl p-4 hover:bg-white/20 transition-all cursor-pointer group"
+              key={`${item.url}-${index}`}
+              className="group cursor-pointer rounded-xl bg-white/10 p-4 backdrop-blur-sm transition-all hover:bg-white/20"
               onClick={() => window.open(item.url, '_blank')}
             >
               {item.image && (
-                <div className="mb-3 rounded-lg overflow-hidden">
+                <div className="mb-3 overflow-hidden rounded-lg">
                   <img
                     src={item.image}
                     alt={item.title}
-                    className="w-full h-32 object-cover group-hover:scale-105 transition-transform duration-300"
+                    className="h-32 w-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />
                 </div>
               )}
-              <h4 className="text-white font-semibold text-sm mb-2 line-clamp-2 group-hover:text-green-200 transition-colors">
+              <h4 className="mb-2 line-clamp-2 text-sm font-semibold text-white transition-colors group-hover:text-green-200">
                 {item.title}
               </h4>
-              <p className="text-green-100 text-xs line-clamp-2 mb-2">
-                {item.description}
-              </p>
+              <p className="mb-2 line-clamp-2 text-xs text-green-100">{item.description}</p>
               <div className="flex items-center justify-between">
-                <span className="text-green-200 text-xs font-medium">
-                  {item.source}
-                </span>
-                <span className="text-green-200/70 text-xs" suppressHydrationWarning>
+                <span className="text-xs font-medium text-green-200">{item.source}</span>
+                <span className="text-xs text-green-200/70" suppressHydrationWarning>
                   {formatDate(item.publishedAt)}
                 </span>
               </div>
@@ -134,11 +121,8 @@ export default function SportsNewsPanel() {
         )}
       </div>
 
-      {/* Footer */}
-      <div className="bg-green-900/50 px-4 py-3 border-t border-green-700">
-        <p className="text-center text-green-200 text-xs">
-          Powered by ESPN API • Actualizado automáticamente
-        </p>
+      <div className="border-t border-green-700 bg-green-900/50 px-4 py-3">
+        <p className="text-center text-xs text-green-200">Powered by ESPN API - Actualizado manualmente</p>
       </div>
     </div>
   )
