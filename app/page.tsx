@@ -9,7 +9,7 @@ export default async function Home() {
     <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-800 to-emerald-900">
       <div className="container mx-auto px-4 py-8">
         <header className="mb-8 text-center">
-          <h1 className="mb-2 text-4xl font-bold text-white md:text-5xl">⚽ Sports Chatbot 🏀</h1>
+          <h1 className="mb-2 text-4xl font-bold text-white md:text-5xl">Sports Chatbot</h1>
           <p className="text-lg text-green-100">Tu asistente deportivo con noticias en tiempo real</p>
         </header>
 

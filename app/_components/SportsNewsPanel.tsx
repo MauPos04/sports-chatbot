@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import type { SportsNewsItem } from '@/app/lib/sports-news'
 
@@ -12,14 +12,15 @@ export default function SportsNewsPanel({ initialNews }: SportsNewsPanelProps) {
   const [news, setNews] = useState<SportsNewsItem[]>(initialNews)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [hiddenImages, setHiddenImages] = useState<Set<string>>(new Set())
 
-  async function fetchNews() {
+  const loadNews = useCallback(async () => {
     try {
-      setIsLoading(true)
       const response = await fetch('/api/sports-news')
       if (!response.ok) throw new Error('Failed to fetch news')
       const data = await response.json()
       setNews(data.articles || [])
+      setHiddenImages(new Set())
       setError(null)
     } catch (err) {
       setError('Error al cargar noticias')
@@ -27,6 +28,21 @@ export default function SportsNewsPanel({ initialNews }: SportsNewsPanelProps) {
     } finally {
       setIsLoading(false)
     }
+  }, [])
+
+  const fetchNews = async () => {
+    setIsLoading(true)
+    await loadNews()
+  }
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(loadNews, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [loadNews])
+
+  const hideBrokenImage = (image: string) => {
+    setHiddenImages((current) => new Set(current).add(image))
   }
 
   const formatDate = (dateString: string) => {
@@ -44,8 +60,8 @@ export default function SportsNewsPanel({ initialNews }: SportsNewsPanelProps) {
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border-4 border-green-600 bg-gradient-to-b from-green-800 to-emerald-900 shadow-2xl">
       <div className="flex items-center justify-between bg-gradient-to-r from-green-700 to-emerald-700 px-6 py-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl shadow-lg">
-            📰
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl font-bold text-green-700 shadow-lg">
+            N
           </div>
           <div>
             <h3 className="text-lg font-bold text-white">Noticias Deportivas</h3>
@@ -76,7 +92,7 @@ export default function SportsNewsPanel({ initialNews }: SportsNewsPanelProps) {
           </div>
         ) : error ? (
           <div className="py-8 text-center">
-            <div className="mb-2 text-4xl">⚠️</div>
+            <div className="mb-2 text-4xl">!</div>
             <p className="text-sm text-white/80">{error}</p>
             <button
               onClick={() => void fetchNews()}
@@ -87,37 +103,44 @@ export default function SportsNewsPanel({ initialNews }: SportsNewsPanelProps) {
           </div>
         ) : news.length === 0 ? (
           <div className="py-8 text-center">
-            <div className="mb-2 text-4xl">📰</div>
+            <div className="mb-2 text-4xl">N</div>
             <p className="text-sm text-white/80">No hay noticias disponibles</p>
           </div>
         ) : (
-          news.map((item, index) => (
-            <div
-              key={`${item.url}-${index}`}
-              className="group cursor-pointer rounded-xl bg-white/10 p-4 backdrop-blur-sm transition-all hover:bg-white/20"
-              onClick={() => window.open(item.url, '_blank')}
-            >
-              {item.image && (
-                <div className="mb-3 overflow-hidden rounded-lg">
-                  <img
-                    src={item.image}
-                    alt={item.title}
-                    className="h-32 w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  />
+          news.map((item, index) => {
+            const visibleImage = item.image && !hiddenImages.has(item.image) ? item.image : null
+
+            return (
+              <div
+                key={`${item.url}-${index}`}
+                className="group cursor-pointer rounded-xl bg-white/10 p-4 backdrop-blur-sm transition-all hover:bg-white/20"
+                onClick={() => window.open(item.url, '_blank')}
+              >
+                {visibleImage && (
+                  <div className="mb-3 overflow-hidden rounded-lg">
+                    {/* ESPN serves images from multiple CDNs, so native img keeps fallback handling simple. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={visibleImage}
+                      alt={item.title}
+                      onError={() => hideBrokenImage(visibleImage)}
+                      className="h-32 w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                  </div>
+                )}
+                <h4 className="mb-2 line-clamp-2 text-sm font-semibold text-white transition-colors group-hover:text-green-200">
+                  {item.title}
+                </h4>
+                <p className="mb-2 line-clamp-2 text-xs text-green-100">{item.description}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-green-200">{item.source}</span>
+                  <span className="text-xs text-green-200/70" suppressHydrationWarning>
+                    {formatDate(item.publishedAt)}
+                  </span>
                 </div>
-              )}
-              <h4 className="mb-2 line-clamp-2 text-sm font-semibold text-white transition-colors group-hover:text-green-200">
-                {item.title}
-              </h4>
-              <p className="mb-2 line-clamp-2 text-xs text-green-100">{item.description}</p>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-green-200">{item.source}</span>
-                <span className="text-xs text-green-200/70" suppressHydrationWarning>
-                  {formatDate(item.publishedAt)}
-                </span>
               </div>
-            </div>
-          ))
+            )
+          })
         )}
       </div>
 

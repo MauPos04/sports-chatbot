@@ -21,6 +21,25 @@ type EspnHeadline = {
   images?: Array<{ url?: string }>
 }
 
+async function getWorkingImageUrl(headline: EspnHeadline): Promise<string | null> {
+  for (const image of headline.images || []) {
+    if (!image.url) continue
+
+    try {
+      const response = await fetch(image.url, { method: 'HEAD' })
+      const contentType = response.headers.get('content-type') || ''
+
+      if (response.ok && contentType.startsWith('image/')) {
+        return image.url
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return null
+}
+
 const FALLBACK_ARTICLES: SportsNewsItem[] = [
   {
     title: 'Leyendas del futbol: los mejores jugadores de la historia',
@@ -80,14 +99,14 @@ export async function getSportsNews(limit = 10): Promise<{
     const espnData = await response.json()
     const headlines: EspnHeadline[] = Array.isArray(espnData.headlines) ? espnData.headlines : []
 
-    const articles = headlines.map((headline) => ({
+    const articles = await Promise.all(headlines.map(async (headline) => ({
       title: headline.headline || headline.title || 'Sin titulo',
       description: headline.description || headline.linkText || 'Sin descripcion',
       url: headline.links?.web?.href || headline.links?.mobile?.href || '#',
       publishedAt: headline.published || headline.originallyPosted || new Date().toISOString(),
       source: 'ESPN',
-      image: headline.images?.[0]?.url || null,
-    }))
+      image: await getWorkingImageUrl(headline),
+    })))
 
     return {
       articles: articles.slice(0, limit),
