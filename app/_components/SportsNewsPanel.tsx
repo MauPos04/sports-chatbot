@@ -23,7 +23,7 @@ export default function SportsNewsPanel({ initialNews }: SportsNewsPanelProps) {
       setHiddenImages(new Set())
       setError(null)
     } catch (err) {
-      setError('Error al cargar noticias')
+      setError('Unable to load news')
       console.error('Error fetching news:', err)
     } finally {
       setIsLoading(false)
@@ -64,14 +64,14 @@ export default function SportsNewsPanel({ initialNews }: SportsNewsPanelProps) {
             📰
           </div>
           <div>
-            <h3 className="text-lg font-bold text-white">Noticias Deportivas</h3>
-            <p className="text-xs text-green-100">Ultimas noticias de ESPN</p>
+            <h3 className="text-lg font-bold text-white">Sports News</h3>
+            <p className="text-xs text-green-100">Latest headlines from ESPN</p>
           </div>
         </div>
         <button
           onClick={() => void fetchNews()}
           className="rounded-full bg-white/20 p-2 transition-colors hover:bg-white/30"
-          title="Actualizar noticias"
+          title="Refresh news"
         >
           <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -98,13 +98,13 @@ export default function SportsNewsPanel({ initialNews }: SportsNewsPanelProps) {
               onClick={() => void fetchNews()}
               className="mt-3 rounded-lg bg-white/20 px-4 py-2 text-sm text-white transition-colors hover:bg-white/30"
             >
-              Reintentar
+              Try again
             </button>
           </div>
         ) : news.length === 0 ? (
           <div className="py-8 text-center">
             <div className="mb-2 text-4xl">🗞️</div>
-            <p className="text-sm text-white/80">No hay noticias disponibles</p>
+            <p className="text-sm text-white/80">No news available</p>
           </div>
         ) : (
           news.map((item, index) => {
@@ -145,7 +145,7 @@ export default function SportsNewsPanel({ initialNews }: SportsNewsPanelProps) {
       </div>
 
       <div className="border-t border-green-700 bg-green-900/50 px-4 py-3">
-        <p className="text-center text-xs text-green-200">Powered by ESPN API - Actualizado manualmente</p>
+        <p className="text-center text-xs text-green-200">Powered by ESPN API - Manually refreshed</p>
       </div>
     </div>
   )

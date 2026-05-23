@@ -12,7 +12,7 @@ export default async function Home() {
           <h1 className="mb-2 text-4xl font-bold text-white md:text-5xl">
             ⚽ Sports Chatbot 🏀
           </h1>
-          <p className="text-lg text-green-100">Tu asistente deportivo con noticias en tiempo real</p>
+          <p className="text-lg text-green-100">Your sports assistant for real-time news and game updates</p>
         </header>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

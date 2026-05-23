@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sports Chatbot - Tu Asistente Deportivo",
-  description: "Chatbot deportivo con noticias en tiempo real sobre fútbol, baloncesto, tenis, F1 y más deportes.",
+  title: "Sports Chatbot - Your Sports Assistant",
+  description: "A sports chatbot with real-time news, game updates, and coverage across major leagues.",
 };
 
 export default function RootLayout({

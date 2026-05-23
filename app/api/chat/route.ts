@@ -5,6 +5,7 @@ import { getSportsNews, type SportsNewsItem } from '@/app/lib/sports-news'
 const DEFAULT_MODEL = 'openai/gpt-4o-mini'
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 const NEWS_BATCH_SIZE = 3
+const APP_TIME_ZONE = 'America/Bogota'
 
 type HistoryMessage = {
   role: 'user' | 'assistant'
@@ -15,6 +16,48 @@ type ChatRequestBody = {
   message?: string
   history?: HistoryMessage[]
 }
+
+type ScoreboardLeague = {
+  label: string
+  url: string
+  keywords: string[]
+}
+
+type SportsEvent = {
+  league: string
+  name: string
+  status: string
+  time: string
+  venue: string
+}
+
+const SCOREBOARD_LEAGUES: ScoreboardLeague[] = [
+  {
+    label: 'MLB',
+    url: 'https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard',
+    keywords: ['mlb', 'baseball'],
+  },
+  {
+    label: 'NBA',
+    url: 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard',
+    keywords: ['nba', 'basketball'],
+  },
+  {
+    label: 'NFL',
+    url: 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard',
+    keywords: ['nfl', 'football'],
+  },
+  {
+    label: 'NHL',
+    url: 'https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard',
+    keywords: ['nhl', 'hockey'],
+  },
+  {
+    label: 'MLS',
+    url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard',
+    keywords: ['mls', 'soccer', 'football'],
+  },
+]
 
 function normalizeHistory(history: unknown): HistoryMessage[] {
   if (!Array.isArray(history)) {
@@ -71,14 +114,32 @@ function getLastAssistantMessage(history: HistoryMessage[]): string {
   return [...history].reverse().find((message) => message.role === 'assistant')?.content || ''
 }
 
+function getLocalDateKey(date: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: APP_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
+function formatEventTime(dateString: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_TIME_ZONE,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(new Date(dateString))
+}
+
 function assistantMessageLooksLikeNews(content: string): boolean {
   const normalized = normalizeText(content)
 
   return (
-    normalized.includes('noticias deportivas') ||
-    normalized.includes('fuente: espn') ||
-    normalized.includes('leer mas:') ||
-    normalized.includes('[leer mas]')
+    normalized.includes('sports headlines') ||
+    normalized.includes('source: espn') ||
+    normalized.includes('read more:') ||
+    normalized.includes('[read more]')
   )
 }
 
@@ -87,8 +148,8 @@ function countDisplayedNewsItems(history: HistoryMessage[]): number {
     .filter((message) => message.role === 'assistant' && assistantMessageLooksLikeNews(message.content))
     .reduce((total, message) => {
       const numberedItems = message.content.match(/^\d+\.\s/gm)?.length || 0
-      const markdownItems = message.content.match(/\[Leer m[aá]s\]/gi)?.length || 0
-      const plainLinks = message.content.match(/Leer m[aá]s:/gi)?.length || 0
+      const markdownItems = message.content.match(/\[Read more\]/gi)?.length || 0
+      const plainLinks = message.content.match(/Read more:/gi)?.length || 0
 
       return total + Math.max(numberedItems, markdownItems, plainLinks, NEWS_BATCH_SIZE)
     }, 0)
@@ -99,27 +160,56 @@ function isNewsRequest(message: string, history: HistoryMessage[]): boolean {
   const lastAssistant = getLastAssistantMessage(history)
   const followsNews = assistantMessageLooksLikeNews(lastAssistant)
   const asksForNews = [
+    'news',
+    'headline',
+    'headlines',
+    'latest',
+    'what happened today',
+    'sports news',
     'noticia',
     'noticias',
-    'titular',
-    'titulares',
-    'que hay hoy',
-    'que paso hoy',
-    'actualidad',
   ].some((keyword) => text.includes(keyword))
   const asksForMore = [
+    'more',
+    'what else',
+    'another',
+    'next',
+    'continue',
     'que mas',
     'que otras',
-    'que otra',
-    'otra mas',
-    'otras mas',
-    'mas',
-    'siguiente',
-    'continua',
-    'continuar',
   ].some((keyword) => text === keyword || text.includes(keyword))
 
   return asksForNews || (followsNews && asksForMore)
+}
+
+function isScheduleRequest(message: string): boolean {
+  const text = normalizeText(message)
+
+  return [
+    'games today',
+    'today games',
+    "today's games",
+    'matches today',
+    'fixtures today',
+    'schedule today',
+    'who plays today',
+    'partidos hoy',
+    'juegos hoy',
+    'quien juega hoy',
+    'nba today',
+    'mlb today',
+    'nfl today',
+    'nhl today',
+  ].some((keyword) => text.includes(keyword))
+}
+
+function selectScoreboardLeagues(message: string): ScoreboardLeague[] {
+  const text = normalizeText(message)
+  const selected = SCOREBOARD_LEAGUES.filter((league) =>
+    league.keywords.some((keyword) => text.includes(keyword))
+  )
+
+  return selected.length > 0 ? selected : SCOREBOARD_LEAGUES
 }
 
 function cleanDescription(description: string): string {
@@ -136,13 +226,10 @@ function formatNewsReply(articles: SportsNewsItem[], offset: number): string {
   const batch = articles.slice(offset, offset + NEWS_BATCH_SIZE)
 
   if (batch.length === 0) {
-    return 'No encontre mas noticias nuevas en ESPN ahora mismo. Puedes pedirme noticias de un deporte especifico o intentar de nuevo en unos minutos.'
+    return 'I could not find more fresh ESPN headlines right now. Try asking for a specific sport or check again in a few minutes.'
   }
 
-  const header =
-    offset === 0
-      ? 'Estas son noticias deportivas de hoy:'
-      : 'Estas son otras noticias deportivas:'
+  const header = offset === 0 ? "Here are today's sports headlines:" : 'Here are more sports headlines:'
   const body = batch
     .map((article, index) => {
       const position = offset + index + 1
@@ -151,42 +238,122 @@ function formatNewsReply(articles: SportsNewsItem[], offset: number): string {
       return [
         `${position}. ${article.title}`,
         description,
-        `Fuente: ${article.source}`,
-        `Leer mas: ${article.url}`,
+        `Source: ${article.source}`,
+        `Read more: ${article.url}`,
       ].join('\n')
     })
     .join('\n\n')
   const footer =
     offset + NEWS_BATCH_SIZE < articles.length
-      ? 'Escribe "que mas" para ver otras noticias.'
-      : 'Por ahora esas son las noticias disponibles en ESPN.'
+      ? 'Type "more" to see additional headlines.'
+      : 'Those are the ESPN headlines available right now.'
 
   return `${header}\n\n${body}\n\n${footer}`
+}
+
+function parseScoreboardEvents(data: unknown, league: string): SportsEvent[] {
+  if (!data || typeof data !== 'object' || !('events' in data) || !Array.isArray(data.events)) {
+    return []
+  }
+
+  const todayKey = getLocalDateKey(new Date())
+
+  return data.events
+    .filter((event): event is Record<string, unknown> => Boolean(event && typeof event === 'object'))
+    .filter((event) => {
+      return typeof event.date === 'string' && getLocalDateKey(new Date(event.date)) === todayKey
+    })
+    .map((event) => {
+      const competition =
+        Array.isArray(event.competitions) && event.competitions[0] && typeof event.competitions[0] === 'object'
+          ? (event.competitions[0] as Record<string, unknown>)
+          : {}
+      const venue = competition.venue && typeof competition.venue === 'object'
+        ? (competition.venue as Record<string, unknown>)
+        : {}
+      const status = event.status && typeof event.status === 'object'
+        ? (event.status as Record<string, unknown>)
+        : {}
+      const statusType = status.type && typeof status.type === 'object'
+        ? (status.type as Record<string, unknown>)
+        : {}
+
+      return {
+        league,
+        name: typeof event.name === 'string' ? event.name : 'Game',
+        status: typeof statusType.description === 'string' ? statusType.description : 'Scheduled',
+        time: typeof event.date === 'string' ? formatEventTime(event.date) : 'TBD',
+        venue: typeof venue.fullName === 'string' ? venue.fullName : 'Venue TBD',
+      }
+    })
+}
+
+async function getScheduleReply(message: string): Promise<string> {
+  const leagues = selectScoreboardLeagues(message)
+  const results = await Promise.all(
+    leagues.map(async (league) => {
+      try {
+        const response = await fetch(league.url, {
+          next: { revalidate: 120 },
+        })
+
+        if (!response.ok) {
+          return []
+        }
+
+        return parseScoreboardEvents(await response.json(), league.label)
+      } catch (error) {
+        console.error(`Failed to fetch ${league.label} scoreboard:`, error)
+        return []
+      }
+    })
+  )
+  const events = results.flat().slice(0, 12)
+
+  if (events.length === 0) {
+    return [
+      "I could not find games scheduled for today in ESPN's MLB, NBA, NFL, NHL, or MLS scoreboards.",
+      '',
+      'Try asking for sports news, or ask for a specific league like "NBA today" or "MLB today".',
+    ].join('\n')
+  }
+
+  const body = events
+    .map((event, index) => {
+      return [
+        `${index + 1}. ${event.name}`,
+        `${event.league} - ${event.status} at ${event.time}`,
+        `Venue: ${event.venue}`,
+      ].join('\n')
+    })
+    .join('\n\n')
+
+  return `Here are games scheduled for today:\n\n${body}`
 }
 
 function getLocalFallbackReply(message: string, reason: string): string {
   const text = normalizeText(message)
 
-  if (text.includes('ayuda')) {
+  if (text.includes('help') || text.includes('ayuda')) {
     return [
-      'Puedo ayudarte con noticias deportivas, equipos, jugadores y deportes especificos.',
+      'I can help with sports headlines, games, teams, players, and general sports questions.',
       '',
-      'Prueba con:',
-      '1. que noticias hay hoy',
-      '2. que mas',
-      '3. noticias de futbol',
-      '4. NBA hoy',
+      'Try:',
+      '1. games today',
+      '2. sports news',
+      '3. more',
+      '4. NBA today',
       '',
-      `Nota tecnica: OpenRouter no respondio ahora mismo (${reason}).`,
+      `Technical note: OpenRouter did not respond right now (${reason}).`,
     ].join('\n')
   }
 
   return [
-    'Puedo ayudarte, pero el modelo de OpenRouter no respondio ahora mismo.',
+    'I can help, but the OpenRouter model did not respond right now.',
     '',
-    'Mientras tanto puedo seguir mostrando noticias deportivas. Escribe "que noticias hay hoy" o usa los botones rapidos.',
+    'You can still ask for "sports news" or "games today" because those use ESPN data directly.',
     '',
-    `Detalle: ${reason}.`,
+    `Details: ${reason}.`,
   ].join('\n')
 }
 
@@ -227,8 +394,15 @@ export async function POST(request: Request) {
     const history = normalizeHistory(body.history)
     const lastAssistant = getLastAssistantMessage(history)
 
+    if (isScheduleRequest(message)) {
+      return NextResponse.json({
+        reply: await getScheduleReply(message),
+        model: 'espn-scoreboard',
+      })
+    }
+
     if (isNewsRequest(message, history)) {
-      const isFollowUp = assistantMessageLooksLikeNews(lastAssistant) && !normalizeText(message).includes('noticia')
+      const isFollowUp = assistantMessageLooksLikeNews(lastAssistant) && !normalizeText(message).includes('news')
 
       return NextResponse.json({
         reply: await getNewsReply(history, isFollowUp),
@@ -238,7 +412,7 @@ export async function POST(request: Request) {
 
     if (!apiKey) {
       return NextResponse.json({
-        reply: getLocalFallbackReply(message, 'falta OPENROUTER_API_KEY/openrouter en el entorno'),
+        reply: getLocalFallbackReply(message, 'missing OPENROUTER_API_KEY/openrouter in the environment'),
         model: 'local-fallback',
       })
     }
@@ -247,10 +421,10 @@ export async function POST(request: Request) {
     const sportsContext = await getSportsContext()
     const systemPrompt = [
       'You are SportsBot, a helpful sports assistant.',
-      'Always answer in Spanish.',
+      'Always answer in English.',
       'Be concise, clear, and practical.',
       'Do not use raw Markdown tables. Prefer short paragraphs or numbered lists with plain URLs.',
-      'If the user asks for fresh or live information and it is not present in the provided context, say so clearly.',
+      'If the user asks for fresh schedules, scores, or live games, tell them to use "games today" so ESPN scoreboard data can be used.',
       'If useful, use these recent ESPN headlines as context:',
       sportsContext || 'No recent headlines were available.',
     ].join('\n')
@@ -280,7 +454,7 @@ export async function POST(request: Request) {
       const errorText = await response.text()
       console.error('OpenRouter request failed:', errorText)
       return NextResponse.json({
-        reply: getLocalFallbackReply(message, `OpenRouter devolvio ${response.status}`),
+        reply: getLocalFallbackReply(message, `OpenRouter returned ${response.status}`),
         model: 'local-fallback',
       })
     }
@@ -290,7 +464,7 @@ export async function POST(request: Request) {
 
     if (!reply) {
       return NextResponse.json({
-        reply: getLocalFallbackReply(message, 'OpenRouter devolvio una respuesta vacia'),
+        reply: getLocalFallbackReply(message, 'OpenRouter returned an empty response'),
         model: 'local-fallback',
       })
     }

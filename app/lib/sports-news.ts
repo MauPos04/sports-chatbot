@@ -42,40 +42,40 @@ async function getWorkingImageUrl(headline: EspnHeadline): Promise<string | null
 
 const FALLBACK_ARTICLES: SportsNewsItem[] = [
   {
-    title: 'Leyendas del futbol: los mejores jugadores de la historia',
-    description: 'Un analisis de los futbolistas que han dejado huella imborrable en el deporte rey.',
+    title: 'Soccer legends: the best players in history',
+    description: 'A look at the players who shaped the world game.',
     url: 'https://www.espn.com/soccer',
     publishedAt: new Date().toISOString(),
     source: 'ESPN Sports',
     image: null,
   },
   {
-    title: 'NBA: los equipos favoritos para esta temporada',
-    description: 'Analisis de los contendientes al titulo de la NBA este ano.',
+    title: 'NBA: title favorites this season',
+    description: 'A look at the strongest contenders for this year NBA title.',
     url: 'https://www.espn.com/nba',
     publishedAt: new Date().toISOString(),
     source: 'ESPN Basketball',
     image: null,
   },
   {
-    title: 'Tenis: Novak Djokovic continua haciendo historia',
-    description: 'El serbio sigue rompiendo records en el circuito profesional de tenis.',
+    title: 'Tennis: Novak Djokovic continues making history',
+    description: 'The Serbian star keeps setting records on the professional tennis tour.',
     url: 'https://www.espn.com/tennis',
     publishedAt: new Date().toISOString(),
     source: 'ESPN Tennis',
     image: null,
   },
   {
-    title: 'Formula 1: Max Verstappen domina la temporada',
-    description: 'El piloto neerlandes de Red Bull Racing muestra su supremacia en la pista.',
+    title: 'Formula 1: Max Verstappen controls the season',
+    description: 'The Red Bull Racing driver continues to show his pace on track.',
     url: 'https://www.espn.com/f1',
     publishedAt: new Date().toISOString(),
     source: 'ESPN F1',
     image: null,
   },
   {
-    title: 'Champions League: los mejores momentos de la edicion',
-    description: 'Repasamos las jugadas mas destacadas de la maxima competencia europea de clubes.',
+    title: 'Champions League: best moments of the edition',
+    description: 'A recap of standout plays from Europe top club competition.',
     url: 'https://www.espn.com/soccer',
     publishedAt: new Date().toISOString(),
     source: 'ESPN Soccer',
@@ -100,8 +100,8 @@ export async function getSportsNews(limit = 10): Promise<{
     const headlines: EspnHeadline[] = Array.isArray(espnData.headlines) ? espnData.headlines : []
 
     const articles = await Promise.all(headlines.map(async (headline) => ({
-      title: headline.headline || headline.title || 'Sin titulo',
-      description: headline.description || headline.linkText || 'Sin descripcion',
+      title: headline.headline || headline.title || 'Untitled headline',
+      description: headline.description || headline.linkText || 'No description available',
       url: headline.links?.web?.href || headline.links?.mobile?.href || '#',
       publishedAt: headline.published || headline.originallyPosted || new Date().toISOString(),
       source: 'ESPN',

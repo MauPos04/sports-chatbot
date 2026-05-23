@@ -14,7 +14,7 @@ interface ChatHistoryItem {
   content: string
 }
 
-const quickPrompts = ['partidos hoy', 'noticias de futbol', 'NBA hoy', 'tenis', 'ayuda']
+const quickPrompts = ['games today', 'sports news', 'NBA today', 'MLB today', 'help']
 
 function buildHistory(messages: Message[]): ChatHistoryItem[] {
   return messages.map((message) => ({
@@ -91,7 +91,7 @@ function renderMessageText(text: string): ReactNode {
 export default function SportsChatbot() {
   const [messages, setMessages] = useState<Message[]>([
     createMessage(
-      'Hola. Soy tu asistente deportivo. Puedo ayudarte con noticias, equipos, jugadores, ligas y preguntas generales de deportes. Que te gustaria consultar hoy?',
+      'Hi. I am your sports assistant. I can help with sports news, games, teams, players, leagues, and general sports questions. What would you like to know today?',
       'bot'
     ),
   ])
@@ -136,7 +136,7 @@ export default function SportsChatbot() {
       }
 
       const botMessage = createMessage(
-        typeof data.reply === 'string' ? data.reply : 'No pude generar una respuesta en este momento.',
+        typeof data.reply === 'string' ? data.reply : 'I could not generate a response right now.',
         'bot'
       )
 
@@ -146,7 +146,7 @@ export default function SportsChatbot() {
       setMessages((currentMessages) => [
         ...currentMessages,
         createMessage(
-          'No pude responder en este momento. Revisa la configuracion de OpenRouter e intenta de nuevo.',
+          'I could not respond right now. Please try sports news or games today while the model connection recovers.',
           'bot'
         ),
       ])
@@ -172,7 +172,7 @@ export default function SportsChatbot() {
           <h2 className="text-lg font-bold text-white">SportsBot</h2>
           <p className="flex items-center gap-1 text-xs text-green-100">
             <span className="h-2 w-2 animate-pulse rounded-full bg-green-300"></span>
-            OpenRouter activo
+            Sports assistant online
           </p>
         </div>
       </div>
@@ -225,7 +225,7 @@ export default function SportsChatbot() {
             value={inputValue}
             onChange={(event) => setInputValue(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Escribe tu mensaje sobre deportes..."
+            placeholder="Ask about sports..."
             className="flex-1 rounded-xl border-2 border-green-300 px-3 py-2 text-sm text-gray-700 outline-none transition-all focus:border-green-500 focus:ring-2 focus:ring-green-200"
             disabled={isLoading}
           />
@@ -234,7 +234,7 @@ export default function SportsChatbot() {
             disabled={isLoading || !inputValue.trim()}
             className="flex items-center gap-1 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition-all hover:from-green-700 hover:to-emerald-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span>{isLoading ? 'Enviando...' : 'Enviar'}</span>
+            <span>{isLoading ? 'Sending...' : 'Send'}</span>
           </button>
         </div>
 
