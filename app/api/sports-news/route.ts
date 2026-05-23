@@ -1,5 +1,38 @@
 import { NextResponse } from 'next/server'
 
+interface EspnHeadline {
+  headline?: string
+  title?: string
+  description?: string
+  linkText?: string
+  links?: {
+    web?: { href?: string }
+    mobile?: { href?: string }
+  }
+  published?: string
+  originallyPosted?: string
+  images?: { url?: string }[]
+}
+
+async function getWorkingImageUrl(headline: EspnHeadline) {
+  for (const image of headline.images || []) {
+    if (!image.url) continue
+
+    try {
+      const response = await fetch(image.url, { method: 'HEAD' })
+      const contentType = response.headers.get('content-type') || ''
+
+      if (response.ok && contentType.startsWith('image/')) {
+        return image.url
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return null
+}
+
 export async function GET() {
   try {
     // Usar la API de ESPN NOW para noticias deportivas en tiempo real
@@ -14,14 +47,14 @@ export async function GET() {
     const espnData = await espnResponse.json()
 
     // Transformar los datos de ESPN NOW al formato que necesitamos
-    const articles = espnData.headlines?.map((headline: any) => ({
+    const articles = await Promise.all(((espnData.headlines as EspnHeadline[] | undefined) || []).map(async (headline) => ({
       title: headline.headline || headline.title || 'Sin título',
       description: headline.description || headline.linkText || 'Sin descripción',
       url: headline.links?.web?.href || headline.links?.mobile?.href || '#',
       publishedAt: headline.published || headline.originallyPosted || new Date().toISOString(),
       source: 'ESPN',
-      image: headline.images?.[0]?.url || null
-    })) || []
+      image: await getWorkingImageUrl(headline)
+    })))
 
     return NextResponse.json({
       articles: articles.slice(0, 10),

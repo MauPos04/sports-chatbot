@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import SportsChatbot from './_components/SportsChatbot'
 import SportsNewsPanel from './_components/SportsNewsPanel'
 

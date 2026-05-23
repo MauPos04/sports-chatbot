@@ -74,7 +74,7 @@ export default function SportsChatbot() {
       }
       
       return null
-    } catch (error) {
+    } catch {
       return null
     }
   }
@@ -206,7 +206,7 @@ Solo escribe sobre lo que te interesa y te dare informacion actualizada.`
         timestamp: new Date()
       }
       setMessages(prev => [...prev, botMessage])
-    } catch (error) {
+    } catch {
       const errorMessage: Message = {
         id: messages.length + 2,
         text: 'Lo siento, hubo un error. Por favor intenta de nuevo.',
