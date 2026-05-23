@@ -166,7 +166,7 @@ export default function SportsChatbot() {
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border-4 border-green-600 bg-white/95 shadow-2xl backdrop-blur-lg">
       <div className="flex shrink-0 items-center gap-3 bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl font-bold text-green-700 shadow-lg">
-          S
+          🏆
         </div>
         <div>
           <h2 className="text-lg font-bold text-white">SportsBot</h2>

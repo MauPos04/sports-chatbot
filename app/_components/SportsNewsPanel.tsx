@@ -61,7 +61,7 @@ export default function SportsNewsPanel({ initialNews }: SportsNewsPanelProps) {
       <div className="flex items-center justify-between bg-gradient-to-r from-green-700 to-emerald-700 px-6 py-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl font-bold text-green-700 shadow-lg">
-            N
+            📰
           </div>
           <div>
             <h3 className="text-lg font-bold text-white">Noticias Deportivas</h3>
@@ -92,7 +92,7 @@ export default function SportsNewsPanel({ initialNews }: SportsNewsPanelProps) {
           </div>
         ) : error ? (
           <div className="py-8 text-center">
-            <div className="mb-2 text-4xl">!</div>
+            <div className="mb-2 text-4xl">⚠️</div>
             <p className="text-sm text-white/80">{error}</p>
             <button
               onClick={() => void fetchNews()}
@@ -103,7 +103,7 @@ export default function SportsNewsPanel({ initialNews }: SportsNewsPanelProps) {
           </div>
         ) : news.length === 0 ? (
           <div className="py-8 text-center">
-            <div className="mb-2 text-4xl">N</div>
+            <div className="mb-2 text-4xl">🗞️</div>
             <p className="text-sm text-white/80">No hay noticias disponibles</p>
           </div>
         ) : (

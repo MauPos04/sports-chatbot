@@ -164,6 +164,32 @@ function formatNewsReply(articles: SportsNewsItem[], offset: number): string {
   return `${header}\n\n${body}\n\n${footer}`
 }
 
+function getLocalFallbackReply(message: string, reason: string): string {
+  const text = normalizeText(message)
+
+  if (text.includes('ayuda')) {
+    return [
+      'Puedo ayudarte con noticias deportivas, equipos, jugadores y deportes especificos.',
+      '',
+      'Prueba con:',
+      '1. que noticias hay hoy',
+      '2. que mas',
+      '3. noticias de futbol',
+      '4. NBA hoy',
+      '',
+      `Nota tecnica: OpenRouter no respondio ahora mismo (${reason}).`,
+    ].join('\n')
+  }
+
+  return [
+    'Puedo ayudarte, pero el modelo de OpenRouter no respondio ahora mismo.',
+    '',
+    'Mientras tanto puedo seguir mostrando noticias deportivas. Escribe "que noticias hay hoy" o usa los botones rapidos.',
+    '',
+    `Detalle: ${reason}.`,
+  ].join('\n')
+}
+
 async function getNewsReply(history: HistoryMessage[], isFollowUp: boolean): Promise<string> {
   const { articles } = await getSportsNews(12)
   const offset = isFollowUp ? countDisplayedNewsItems(history) : 0
@@ -211,10 +237,10 @@ export async function POST(request: Request) {
     }
 
     if (!apiKey) {
-      return NextResponse.json(
-        { error: 'Missing OpenRouter API key. Add `openrouter` to your .env file.' },
-        { status: 500 }
-      )
+      return NextResponse.json({
+        reply: getLocalFallbackReply(message, 'falta OPENROUTER_API_KEY/openrouter en el entorno'),
+        model: 'local-fallback',
+      })
     }
 
     const model = process.env.OPENROUTER_MODEL || DEFAULT_MODEL
@@ -253,20 +279,20 @@ export async function POST(request: Request) {
     if (!response.ok) {
       const errorText = await response.text()
       console.error('OpenRouter request failed:', errorText)
-      return NextResponse.json(
-        { error: 'OpenRouter request failed.', details: errorText },
-        { status: 502 }
-      )
+      return NextResponse.json({
+        reply: getLocalFallbackReply(message, `OpenRouter devolvio ${response.status}`),
+        model: 'local-fallback',
+      })
     }
 
     const data = await response.json()
     const reply = normalizeAssistantReply(data?.choices?.[0]?.message?.content)
 
     if (!reply) {
-      return NextResponse.json(
-        { error: 'OpenRouter returned an empty response.' },
-        { status: 502 }
-      )
+      return NextResponse.json({
+        reply: getLocalFallbackReply(message, 'OpenRouter devolvio una respuesta vacia'),
+        model: 'local-fallback',
+      })
     }
 
     return NextResponse.json({
