@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 
+import { getSportsNews, type SportsNewsItem } from '@/app/lib/sports-news'
+
 const DEFAULT_MODEL = 'openai/gpt-4o-mini'
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
-const ESPN_NEWS_URL = 'https://now.core.api.espn.com/v1/sports/news?limit=5'
+const NEWS_BATCH_SIZE = 3
 
 type HistoryMessage = {
   role: 'user' | 'assistant'
@@ -58,42 +60,127 @@ function normalizeAssistantReply(content: unknown): string {
     .trim()
 }
 
+function normalizeText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+}
+
+function getLastAssistantMessage(history: HistoryMessage[]): string {
+  return [...history].reverse().find((message) => message.role === 'assistant')?.content || ''
+}
+
+function assistantMessageLooksLikeNews(content: string): boolean {
+  const normalized = normalizeText(content)
+
+  return (
+    normalized.includes('noticias deportivas') ||
+    normalized.includes('fuente: espn') ||
+    normalized.includes('leer mas:') ||
+    normalized.includes('[leer mas]')
+  )
+}
+
+function countDisplayedNewsItems(history: HistoryMessage[]): number {
+  return history
+    .filter((message) => message.role === 'assistant' && assistantMessageLooksLikeNews(message.content))
+    .reduce((total, message) => {
+      const numberedItems = message.content.match(/^\d+\.\s/gm)?.length || 0
+      const markdownItems = message.content.match(/\[Leer m[aá]s\]/gi)?.length || 0
+      const plainLinks = message.content.match(/Leer m[aá]s:/gi)?.length || 0
+
+      return total + Math.max(numberedItems, markdownItems, plainLinks, NEWS_BATCH_SIZE)
+    }, 0)
+}
+
+function isNewsRequest(message: string, history: HistoryMessage[]): boolean {
+  const text = normalizeText(message)
+  const lastAssistant = getLastAssistantMessage(history)
+  const followsNews = assistantMessageLooksLikeNews(lastAssistant)
+  const asksForNews = [
+    'noticia',
+    'noticias',
+    'titular',
+    'titulares',
+    'que hay hoy',
+    'que paso hoy',
+    'actualidad',
+  ].some((keyword) => text.includes(keyword))
+  const asksForMore = [
+    'que mas',
+    'que otras',
+    'que otra',
+    'otra mas',
+    'otras mas',
+    'mas',
+    'siguiente',
+    'continua',
+    'continuar',
+  ].some((keyword) => text === keyword || text.includes(keyword))
+
+  return asksForNews || (followsNews && asksForMore)
+}
+
+function cleanDescription(description: string): string {
+  const normalized = description.replace(/\s+/g, ' ').trim()
+
+  if (normalized.length <= 180) {
+    return normalized
+  }
+
+  return `${normalized.slice(0, 177).trim()}...`
+}
+
+function formatNewsReply(articles: SportsNewsItem[], offset: number): string {
+  const batch = articles.slice(offset, offset + NEWS_BATCH_SIZE)
+
+  if (batch.length === 0) {
+    return 'No encontre mas noticias nuevas en ESPN ahora mismo. Puedes pedirme noticias de un deporte especifico o intentar de nuevo en unos minutos.'
+  }
+
+  const header =
+    offset === 0
+      ? 'Estas son noticias deportivas de hoy:'
+      : 'Estas son otras noticias deportivas:'
+  const body = batch
+    .map((article, index) => {
+      const position = offset + index + 1
+      const description = cleanDescription(article.description)
+
+      return [
+        `${position}. ${article.title}`,
+        description,
+        `Fuente: ${article.source}`,
+        `Leer mas: ${article.url}`,
+      ].join('\n')
+    })
+    .join('\n\n')
+  const footer =
+    offset + NEWS_BATCH_SIZE < articles.length
+      ? 'Escribe "que mas" para ver otras noticias.'
+      : 'Por ahora esas son las noticias disponibles en ESPN.'
+
+  return `${header}\n\n${body}\n\n${footer}`
+}
+
+async function getNewsReply(history: HistoryMessage[], isFollowUp: boolean): Promise<string> {
+  const { articles } = await getSportsNews(12)
+  const offset = isFollowUp ? countDisplayedNewsItems(history) : 0
+
+  return formatNewsReply(articles, offset)
+}
+
 async function getSportsContext(): Promise<string> {
   try {
-    const response = await fetch(ESPN_NEWS_URL, {
-      next: { revalidate: 300 },
-    })
+    const { articles } = await getSportsNews(5)
 
-    if (!response.ok) {
+    if (articles.length === 0) {
       return ''
     }
 
-    const data = await response.json()
-    const headlines = Array.isArray(data.headlines) ? data.headlines.slice(0, 5) : []
-
-    if (headlines.length === 0) {
-      return ''
-    }
-
-    return headlines
-      .map((headline: Record<string, unknown>, index: number) => {
-        const title =
-          typeof headline.headline === 'string'
-            ? headline.headline
-            : typeof headline.title === 'string'
-              ? headline.title
-              : 'Titular deportivo'
-
-        const description =
-          typeof headline.description === 'string'
-            ? headline.description
-            : typeof headline.linkText === 'string'
-              ? headline.linkText
-              : ''
-
-        const summary = description ? `: ${description}` : ''
-        return `${index + 1}. ${title}${summary}`
-      })
+    return articles
+      .map((article, index) => `${index + 1}. ${article.title}: ${article.description}`)
       .join('\n')
   } catch (error) {
     console.error('Failed to fetch ESPN context for chat:', error)
@@ -111,6 +198,17 @@ export async function POST(request: Request) {
     }
 
     const apiKey = process.env.openrouter || process.env.OPENROUTER_API_KEY
+    const history = normalizeHistory(body.history)
+    const lastAssistant = getLastAssistantMessage(history)
+
+    if (isNewsRequest(message, history)) {
+      const isFollowUp = assistantMessageLooksLikeNews(lastAssistant) && !normalizeText(message).includes('noticia')
+
+      return NextResponse.json({
+        reply: await getNewsReply(history, isFollowUp),
+        model: 'espn-news',
+      })
+    }
 
     if (!apiKey) {
       return NextResponse.json(
@@ -121,11 +219,11 @@ export async function POST(request: Request) {
 
     const model = process.env.OPENROUTER_MODEL || DEFAULT_MODEL
     const sportsContext = await getSportsContext()
-    const history = normalizeHistory(body.history)
     const systemPrompt = [
       'You are SportsBot, a helpful sports assistant.',
       'Always answer in Spanish.',
       'Be concise, clear, and practical.',
+      'Do not use raw Markdown tables. Prefer short paragraphs or numbered lists with plain URLs.',
       'If the user asks for fresh or live information and it is not present in the provided context, say so clearly.',
       'If useful, use these recent ESPN headlines as context:',
       sportsContext || 'No recent headlines were available.',

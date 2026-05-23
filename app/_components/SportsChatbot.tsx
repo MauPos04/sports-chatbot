@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 interface Message {
   id: number
@@ -30,6 +30,62 @@ function createMessage(text: string, sender: 'user' | 'bot'): Message {
     sender,
     timestamp: new Date(),
   }
+}
+
+function renderInlineText(text: string): ReactNode[] {
+  const parts: ReactNode[] = []
+  const pattern = /(\*\*([^*]+)\*\*|\[([^\]]+)\]\((https?:\/\/[^)]+)\)|(https?:\/\/\S+))/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index))
+    }
+
+    if (match[2]) {
+      parts.push(
+        <strong key={`${match.index}-strong`} className="font-semibold">
+          {match[2]}
+        </strong>
+      )
+    } else {
+      const label = match[3] || match[5]
+      const href = match[4] || match[5]
+
+      parts.push(
+        <a
+          key={`${match.index}-link`}
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="font-semibold text-green-700 underline decoration-green-300 underline-offset-2 hover:text-green-800"
+        >
+          {label}
+        </a>
+      )
+    }
+
+    lastIndex = pattern.lastIndex
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex))
+  }
+
+  return parts
+}
+
+function renderMessageText(text: string): ReactNode {
+  return text.split('\n').map((line, index) =>
+    line.trim() ? (
+      <span key={index} className="block">
+        {renderInlineText(line)}
+      </span>
+    ) : (
+      <span key={index} className="block h-2" />
+    )
+  )
 }
 
 export default function SportsChatbot() {
@@ -134,7 +190,7 @@ export default function SportsChatbot() {
                   : 'rounded-bl-none border-2 border-green-100 bg-white text-gray-800'
               }`}
             >
-              <p className="whitespace-pre-wrap text-xs leading-relaxed">{message.text}</p>
+              <div className="text-xs leading-relaxed">{renderMessageText(message.text)}</div>
               <span
                 className={`mt-1 block text-xs ${
                   message.sender === 'user' ? 'text-green-100' : 'text-gray-400'
