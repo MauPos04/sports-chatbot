@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 interface NewsItem {
   title: string
@@ -15,18 +15,15 @@ export default function SportsNewsPanel() {
   const [news, setNews] = useState<NewsItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [hiddenImages, setHiddenImages] = useState<Set<string>>(new Set())
 
-  useEffect(() => {
-    fetchNews()
-  }, [])
-
-  const fetchNews = async () => {
+  const loadNews = useCallback(async () => {
     try {
-      setIsLoading(true)
       const response = await fetch('/api/sports-news')
       if (!response.ok) throw new Error('Failed to fetch news')
       const data = await response.json()
       setNews(data.articles || [])
+      setHiddenImages(new Set())
       setError(null)
     } catch (err) {
       setError('Error al cargar noticias')
@@ -34,6 +31,21 @@ export default function SportsNewsPanel() {
     } finally {
       setIsLoading(false)
     }
+  }, [])
+
+  const fetchNews = async () => {
+    setIsLoading(true)
+    await loadNews()
+  }
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(loadNews, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [loadNews])
+
+  const hideBrokenImage = (image: string) => {
+    setHiddenImages((current) => new Set(current).add(image))
   }
 
   const formatDate = (dateString: string) => {
@@ -100,37 +112,42 @@ export default function SportsNewsPanel() {
             <p className="text-white/80 text-sm">No hay noticias disponibles</p>
           </div>
         ) : (
-          news.map((item, index) => (
-            <div
-              key={index}
-              className="bg-white/10 backdrop-blur-sm rounded-xl p-4 hover:bg-white/20 transition-all cursor-pointer group"
-              onClick={() => window.open(item.url, '_blank')}
-            >
-              {item.image && (
-                <div className="mb-3 rounded-lg overflow-hidden">
-                  <img
-                    src={item.image}
-                    alt={item.title}
-                    className="w-full h-32 object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
+          news.map((item, index) => {
+            const visibleImage = item.image && !hiddenImages.has(item.image) ? item.image : null
+
+            return (
+              <div
+                key={index}
+                className="bg-white/10 backdrop-blur-sm rounded-xl p-4 hover:bg-white/20 transition-all cursor-pointer group"
+                onClick={() => window.open(item.url, '_blank')}
+              >
+                {visibleImage && (
+                  <div className="mb-3 rounded-lg overflow-hidden">
+                    <img
+                      src={visibleImage}
+                      alt={item.title}
+                      onError={() => hideBrokenImage(visibleImage)}
+                      className="w-full h-32 object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                  </div>
+                )}
+                <h4 className="text-white font-semibold text-sm mb-2 line-clamp-2 group-hover:text-green-200 transition-colors">
+                  {item.title}
+                </h4>
+                <p className="text-green-100 text-xs line-clamp-2 mb-2">
+                  {item.description}
+                </p>
+                <div className="flex items-center justify-between">
+                  <span className="text-green-200 text-xs font-medium">
+                    {item.source}
+                  </span>
+                  <span className="text-green-200/70 text-xs" suppressHydrationWarning>
+                    {formatDate(item.publishedAt)}
+                  </span>
                 </div>
-              )}
-              <h4 className="text-white font-semibold text-sm mb-2 line-clamp-2 group-hover:text-green-200 transition-colors">
-                {item.title}
-              </h4>
-              <p className="text-green-100 text-xs line-clamp-2 mb-2">
-                {item.description}
-              </p>
-              <div className="flex items-center justify-between">
-                <span className="text-green-200 text-xs font-medium">
-                  {item.source}
-                </span>
-                <span className="text-green-200/70 text-xs" suppressHydrationWarning>
-                  {formatDate(item.publishedAt)}
-                </span>
               </div>
-            </div>
-          ))
+            )
+          })
         )}
       </div>
 
