@@ -582,7 +582,7 @@ export async function POST(request: Request) {
     const sportsContext = await getSportsContext()
     const systemPrompt = [
       'You are SportsBot, a helpful sports assistant.',
-      'Always answer in English.',
+      'Always reply in the same language as the user\'s last message (match the user\'s language, e.g. Spanish or English).',
       'Be concise, clear, and practical.',
       'Do not use raw Markdown tables. Prefer short paragraphs or numbered lists with plain URLs.',
       'If the user asks for fresh schedules, scores, or live games, tell them to use "games today" so ESPN scoreboard data can be used.',
