@@ -4,8 +4,10 @@ import { getSportsNews, type SportsNewsItem } from '@/app/lib/sports-news'
 
 const DEFAULT_MODEL = 'openai/gpt-4o-mini'
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models'
 const NEWS_BATCH_SIZE = 3
 const APP_TIME_ZONE = 'America/Bogota'
+const DEFAULT_FREE_MODEL_LIMIT = 5
 
 type HistoryMessage = {
   role: 'user' | 'assistant'
@@ -15,6 +17,26 @@ type HistoryMessage = {
 type ChatRequestBody = {
   message?: string
   history?: HistoryMessage[]
+}
+
+type ChatCompletionResult = {
+  reply: string
+  model: string
+}
+
+type OpenRouterModelInfo = {
+  id?: unknown
+  name?: unknown
+  architecture?: {
+    input_modalities?: unknown
+    output_modalities?: unknown
+  }
+}
+
+type FreeModelCandidate = {
+  id: string
+  score: number
+  canUseForText: boolean
 }
 
 type ScoreboardLeague = {
@@ -101,6 +123,101 @@ function normalizeAssistantReply(content: unknown): string {
     })
     .join('\n')
     .trim()
+}
+
+function getConfiguredOpenRouterModels(): string[] {
+  const configuredModel = process.env.OPENROUTER_MODEL || DEFAULT_MODEL
+  const configuredFallbacks = (process.env.OPENROUTER_FALLBACK_MODELS || '')
+    .split(',')
+    .map((model) => model.trim())
+    .filter(Boolean)
+
+  return Array.from(new Set([configuredModel, ...configuredFallbacks]))
+}
+
+function getFreeModelLimit(): number {
+  const parsed = Number(process.env.OPENROUTER_FREE_MODEL_LIMIT)
+
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return DEFAULT_FREE_MODEL_LIMIT
+  }
+
+  return Math.min(Math.floor(parsed), 10)
+}
+
+function hasTextModality(value: unknown): boolean {
+  return Array.isArray(value) && value.includes('text')
+}
+
+function scoreFreeModel(id: string, name: string, originalIndex: number): number {
+  const searchable = `${id} ${name}`.toLowerCase()
+  let score = 1000 - originalIndex
+
+  for (const keyword of ['instruct', 'chat']) {
+    if (searchable.includes(keyword)) {
+      score += 100
+    }
+  }
+
+  for (const keyword of ['safety', 'moderation', 'embedding', 'image', 'audio']) {
+    if (searchable.includes(keyword)) {
+      score -= 500
+    }
+  }
+
+  return score
+}
+
+async function getDynamicFreeOpenRouterModels(apiKey: string): Promise<string[]> {
+  try {
+    const response = await fetch(OPENROUTER_MODELS_URL, {
+      cache: 'no-store',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    })
+
+    if (!response.ok) {
+      console.error(`OpenRouter models request failed: ${response.status}`)
+      return []
+    }
+
+    const data = await response.json()
+    const models = Array.isArray(data?.data) ? data.data : []
+
+    const freeModelCandidates: FreeModelCandidate[] = models
+      .map((model: OpenRouterModelInfo, index: number) => {
+        const id = typeof model.id === 'string' ? model.id : ''
+        const name = typeof model.name === 'string' ? model.name : ''
+        const inputModalities = model.architecture?.input_modalities
+        const outputModalities = model.architecture?.output_modalities
+        const declaresTextModalities =
+          hasTextModality(inputModalities) && hasTextModality(outputModalities)
+        const hasNoModalityData = inputModalities === undefined && outputModalities === undefined
+
+        return {
+          id,
+          score: scoreFreeModel(id, name, index),
+          canUseForText: declaresTextModalities || hasNoModalityData,
+        }
+      })
+
+    return freeModelCandidates
+      .filter((model) => model.id.endsWith(':free') && model.canUseForText)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, getFreeModelLimit())
+      .map((model) => model.id)
+  } catch (error) {
+    console.error('OpenRouter models request failed:', error)
+    return []
+  }
+}
+
+async function getOpenRouterModels(apiKey: string): Promise<string[]> {
+  const configuredModels = getConfiguredOpenRouterModels()
+  const freeModels = await getDynamicFreeOpenRouterModels(apiKey)
+
+  return Array.from(new Set([...configuredModels, ...freeModels]))
 }
 
 function normalizeText(value: string): string {
@@ -331,7 +448,7 @@ async function getScheduleReply(message: string): Promise<string> {
   return `Here are games scheduled for today:\n\n${body}`
 }
 
-function getLocalFallbackReply(message: string, reason: string): string {
+function getLocalFallbackReply(message: string): string {
   const text = normalizeText(message)
 
   if (text.includes('help') || text.includes('ayuda')) {
@@ -343,17 +460,13 @@ function getLocalFallbackReply(message: string, reason: string): string {
       '2. sports news',
       '3. more',
       '4. NBA today',
-      '',
-      `Technical note: OpenRouter did not respond right now (${reason}).`,
     ].join('\n')
   }
 
   return [
-    'I can help, but the OpenRouter model did not respond right now.',
+    'I could not answer that clearly right now.',
     '',
-    'You can still ask for "sports news" or "games today" because those use ESPN data directly.',
-    '',
-    `Details: ${reason}.`,
+    'Try asking again, or use "sports news" or "games today" for live ESPN-powered updates.',
   ].join('\n')
 }
 
@@ -379,6 +492,55 @@ async function getSportsContext(): Promise<string> {
     console.error('Failed to fetch ESPN context for chat:', error)
     return ''
   }
+}
+
+async function getOpenRouterReply(params: {
+  apiKey: string
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
+}): Promise<ChatCompletionResult | null> {
+  for (const model of await getOpenRouterModels(params.apiKey)) {
+    try {
+      const response = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          Authorization: `Bearer ${params.apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+          'X-Title': 'Sports Chatbot',
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.5,
+          max_completion_tokens: 350,
+          messages: params.messages,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`OpenRouter request failed for ${model}:`, errorText)
+        continue
+      }
+
+      const data = await response.json()
+      const reply = normalizeAssistantReply(data?.choices?.[0]?.message?.content)
+
+      if (!reply) {
+        console.error(`OpenRouter returned an empty response for ${model}`)
+        continue
+      }
+
+      return {
+        reply,
+        model: data?.model || model,
+      }
+    } catch (error) {
+      console.error(`OpenRouter request failed for ${model}:`, error)
+    }
+  }
+
+  return null
 }
 
 export async function POST(request: Request) {
@@ -412,12 +574,11 @@ export async function POST(request: Request) {
 
     if (!apiKey) {
       return NextResponse.json({
-        reply: getLocalFallbackReply(message, 'missing OPENROUTER_API_KEY/openrouter in the environment'),
-        model: 'local-fallback',
+        reply: getLocalFallbackReply(message),
+        model: 'sports-assistant',
       })
     }
 
-    const model = process.env.OPENROUTER_MODEL || DEFAULT_MODEL
     const sportsContext = await getSportsContext()
     const systemPrompt = [
       'You are SportsBot, a helpful sports assistant.',
@@ -429,49 +590,25 @@ export async function POST(request: Request) {
       sportsContext || 'No recent headlines were available.',
     ].join('\n')
 
-    const response = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      cache: 'no-store',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-        'X-Title': 'Sports Chatbot',
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.5,
-        max_completion_tokens: 350,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...history,
-          { role: 'user', content: message },
-        ],
-      }),
+    const completion = await getOpenRouterReply({
+      apiKey,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...history,
+        { role: 'user', content: message },
+      ],
     })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('OpenRouter request failed:', errorText)
+    if (!completion) {
       return NextResponse.json({
-        reply: getLocalFallbackReply(message, `OpenRouter returned ${response.status}`),
-        model: 'local-fallback',
-      })
-    }
-
-    const data = await response.json()
-    const reply = normalizeAssistantReply(data?.choices?.[0]?.message?.content)
-
-    if (!reply) {
-      return NextResponse.json({
-        reply: getLocalFallbackReply(message, 'OpenRouter returned an empty response'),
-        model: 'local-fallback',
+        reply: getLocalFallbackReply(message),
+        model: 'sports-assistant',
       })
     }
 
     return NextResponse.json({
-      reply,
-      model: data?.model || model,
+      reply: completion.reply,
+      model: completion.model,
     })
   } catch (error) {
     console.error('Chat route failed:', error)
