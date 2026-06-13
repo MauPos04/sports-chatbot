@@ -51,6 +51,8 @@ type SportsEvent = {
   status: string
   time: string
   venue: string
+  score: string
+  state: string
 }
 
 const SCOREBOARD_LEAGUES: ScoreboardLeague[] = [
@@ -77,7 +79,12 @@ const SCOREBOARD_LEAGUES: ScoreboardLeague[] = [
   {
     label: 'MLS',
     url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard',
-    keywords: ['mls', 'soccer', 'football'],
+    keywords: ['mls'],
+  },
+  {
+    label: 'FIFA World Cup',
+    url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard',
+    keywords: ['world cup', 'copa del mundo', 'mundial', 'fifa', 'soccer', 'futbol', 'football'],
   },
 ]
 
@@ -285,6 +292,9 @@ function isNewsRequest(message: string, history: HistoryMessage[]): boolean {
     'sports news',
     'noticia',
     'noticias',
+    'que hay de nuevo',
+    'que paso hoy',
+    'que hubo hoy',
   ].some((keyword) => text.includes(keyword))
   const asksForMore = [
     'more',
@@ -292,6 +302,7 @@ function isNewsRequest(message: string, history: HistoryMessage[]): boolean {
     'another',
     'next',
     'continue',
+    'mas',
     'que mas',
     'que otras',
   ].some((keyword) => text === keyword || text.includes(keyword))
@@ -313,6 +324,21 @@ function isScheduleRequest(message: string): boolean {
     'partidos hoy',
     'juegos hoy',
     'quien juega hoy',
+    'como va',
+    'como van',
+    'cuanto va',
+    'cuanto van',
+    'marcador',
+    'resultado',
+    'resultados',
+    'en vivo',
+    'partido en vivo',
+    'juego en vivo',
+    'live game',
+    'live games',
+    'live score',
+    'score now',
+    'who is winning',
     'nba today',
     'mlb today',
     'nfl today',
@@ -320,8 +346,46 @@ function isScheduleRequest(message: string): boolean {
   ].some((keyword) => text.includes(keyword))
 }
 
-function selectScoreboardLeagues(message: string): ScoreboardLeague[] {
+function isSpanishMessage(message: string): boolean {
   const text = normalizeText(message)
+
+  return [
+    'hola',
+    'que',
+    'como',
+    'cuanto',
+    'partido',
+    'juego',
+    'hoy',
+    'noticia',
+    'marcador',
+    'resultado',
+    'mundial',
+  ].some((keyword) => text.includes(keyword))
+}
+
+function isLiveScoreRequest(message: string): boolean {
+  const text = normalizeText(message)
+
+  return [
+    'como va',
+    'como van',
+    'cuanto va',
+    'cuanto van',
+    'marcador',
+    'resultado',
+    'en vivo',
+    'live score',
+    'who is winning',
+  ].some((keyword) => text.includes(keyword))
+}
+
+function selectScoreboardLeagues(message: string, history: HistoryMessage[]): ScoreboardLeague[] {
+  const recentContext = history
+    .slice(-4)
+    .map((item) => item.content)
+    .join(' ')
+  const text = normalizeText(`${recentContext} ${message}`)
   const selected = SCOREBOARD_LEAGUES.filter((league) =>
     league.keywords.some((keyword) => text.includes(keyword))
   )
@@ -339,31 +403,47 @@ function cleanDescription(description: string): string {
   return `${normalized.slice(0, 177).trim()}...`
 }
 
-function formatNewsReply(articles: SportsNewsItem[], offset: number): string {
+function formatNewsReply(articles: SportsNewsItem[], offset: number, spanish: boolean): string {
   const batch = articles.slice(offset, offset + NEWS_BATCH_SIZE)
 
   if (batch.length === 0) {
-    return 'I could not find more fresh ESPN headlines right now. Try asking for a specific sport or check again in a few minutes.'
+    return spanish
+      ? 'No encontre mas titulares recientes de ESPN ahora mismo. Prueba con un deporte especifico o revisa de nuevo en unos minutos.'
+      : 'I could not find more fresh ESPN headlines right now. Try asking for a specific sport or check again in a few minutes.'
   }
 
-  const header = offset === 0 ? "Here are today's sports headlines:" : 'Here are more sports headlines:'
+  const header = spanish
+    ? offset === 0
+      ? 'Estos son los titulares deportivos de hoy:'
+      : 'Estos son mas titulares deportivos:'
+    : offset === 0
+      ? "Here are today's sports headlines:"
+      : 'Here are more sports headlines:'
   const body = batch
     .map((article, index) => {
       const position = offset + index + 1
       const description = cleanDescription(article.description)
 
-      return [
-        `${position}. ${article.title}`,
-        description,
-        `Source: ${article.source}`,
-        `Read more: ${article.url}`,
-      ].join('\n')
+      if (spanish) {
+        return [
+          `${position}. ${article.title}`,
+          description,
+          `Fuente: ${article.source}`,
+          `Leer mas: ${article.url}`,
+        ].join('\n')
+      }
+
+      return [`${position}. ${article.title}`, description, `Source: ${article.source}`, `Read more: ${article.url}`].join('\n')
     })
     .join('\n\n')
   const footer =
     offset + NEWS_BATCH_SIZE < articles.length
-      ? 'Type "more" to see additional headlines.'
-      : 'Those are the ESPN headlines available right now.'
+      ? spanish
+        ? 'Escribe "mas" para ver titulares adicionales.'
+        : 'Type "more" to see additional headlines.'
+      : spanish
+        ? 'Estos son los titulares de ESPN disponibles ahora mismo.'
+        : 'Those are the ESPN headlines available right now.'
 
   return `${header}\n\n${body}\n\n${footer}`
 }
@@ -394,6 +474,26 @@ function parseScoreboardEvents(data: unknown, league: string): SportsEvent[] {
       const statusType = status.type && typeof status.type === 'object'
         ? (status.type as Record<string, unknown>)
         : {}
+      const competitors = Array.isArray(competition.competitors)
+        ? competition.competitors.filter(
+            (competitor): competitor is Record<string, unknown> =>
+              Boolean(competitor && typeof competitor === 'object')
+          )
+        : []
+      const scoreParts = competitors.map((competitor) => {
+        const team = competitor.team && typeof competitor.team === 'object'
+          ? (competitor.team as Record<string, unknown>)
+          : {}
+        const name =
+          typeof team.shortDisplayName === 'string'
+            ? team.shortDisplayName
+            : typeof team.displayName === 'string'
+              ? team.displayName
+              : 'Team'
+        const score = typeof competitor.score === 'string' ? competitor.score : '0'
+
+        return `${name} ${score}`
+      })
 
       return {
         league,
@@ -401,12 +501,16 @@ function parseScoreboardEvents(data: unknown, league: string): SportsEvent[] {
         status: typeof statusType.description === 'string' ? statusType.description : 'Scheduled',
         time: typeof event.date === 'string' ? formatEventTime(event.date) : 'TBD',
         venue: typeof venue.fullName === 'string' ? venue.fullName : 'Venue TBD',
+        score: scoreParts.length > 0 ? scoreParts.join(' - ') : 'Score unavailable',
+        state: typeof statusType.state === 'string' ? statusType.state : 'pre',
       }
     })
 }
 
-async function getScheduleReply(message: string): Promise<string> {
-  const leagues = selectScoreboardLeagues(message)
+async function getScheduleReply(message: string, history: HistoryMessage[]): Promise<string> {
+  const leagues = selectScoreboardLeagues(message, history)
+  const wantsLiveScore = isLiveScoreRequest(message)
+  const spanish = isSpanishMessage(message)
   const results = await Promise.all(
     leagues.map(async (league) => {
       try {
@@ -425,27 +529,53 @@ async function getScheduleReply(message: string): Promise<string> {
       }
     })
   )
-  const events = results.flat().slice(0, 12)
+  const allEvents = results.flat()
+  const liveEvents = allEvents.filter((event) => event.state === 'in')
+  const events = (wantsLiveScore && liveEvents.length > 0 ? liveEvents : allEvents).slice(0, 12)
 
   if (events.length === 0) {
-    return [
-      "I could not find games scheduled for today in ESPN's MLB, NBA, NFL, NHL, or MLS scoreboards.",
-      '',
-      'Try asking for sports news, or ask for a specific league like "NBA today" or "MLB today".',
-    ].join('\n')
+    return spanish
+      ? [
+          'No encontre partidos programados o en vivo hoy en los marcadores de ESPN que revisa esta app.',
+          '',
+          'Prueba con una liga especifica como "NBA hoy", "MLB hoy" o "Mundial hoy".',
+        ].join('\n')
+      : [
+          "I could not find games scheduled or live today in ESPN's scoreboards.",
+          '',
+          'Try asking for a specific league like "NBA today", "MLB today", or "World Cup today".',
+        ].join('\n')
   }
 
   const body = events
     .map((event, index) => {
+      if (spanish) {
+        return [
+          `${index + 1}. ${event.name}`,
+          `Marcador: ${event.score}`,
+          `${event.league} - ${event.status} (${event.time})`,
+          `Sede: ${event.venue}`,
+        ].join('\n')
+      }
+
       return [
         `${index + 1}. ${event.name}`,
+        `Score: ${event.score}`,
         `${event.league} - ${event.status} at ${event.time}`,
         `Venue: ${event.venue}`,
       ].join('\n')
     })
     .join('\n\n')
 
-  return `Here are games scheduled for today:\n\n${body}`
+  if (spanish) {
+    return wantsLiveScore
+      ? `Asi van los partidos que encontre en ESPN:\n\n${body}`
+      : `Estos son los partidos de hoy:\n\n${body}`
+  }
+
+  return wantsLiveScore
+    ? `Here are the live or current games I found on ESPN:\n\n${body}`
+    : `Here are games scheduled for today:\n\n${body}`
 }
 
 function getLocalFallbackReply(message: string): string {
@@ -470,11 +600,11 @@ function getLocalFallbackReply(message: string): string {
   ].join('\n')
 }
 
-async function getNewsReply(history: HistoryMessage[], isFollowUp: boolean): Promise<string> {
+async function getNewsReply(message: string, history: HistoryMessage[], isFollowUp: boolean): Promise<string> {
   const { articles } = await getSportsNews(12)
   const offset = isFollowUp ? countDisplayedNewsItems(history) : 0
 
-  return formatNewsReply(articles, offset)
+  return formatNewsReply(articles, offset, isSpanishMessage(message))
 }
 
 async function getSportsContext(): Promise<string> {
@@ -558,7 +688,7 @@ export async function POST(request: Request) {
 
     if (isScheduleRequest(message)) {
       return NextResponse.json({
-        reply: await getScheduleReply(message),
+        reply: await getScheduleReply(message, history),
         model: 'espn-scoreboard',
       })
     }
@@ -567,7 +697,7 @@ export async function POST(request: Request) {
       const isFollowUp = assistantMessageLooksLikeNews(lastAssistant) && !normalizeText(message).includes('news')
 
       return NextResponse.json({
-        reply: await getNewsReply(history, isFollowUp),
+        reply: await getNewsReply(message, history, isFollowUp),
         model: 'espn-news',
       })
     }
