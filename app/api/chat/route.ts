@@ -69,7 +69,7 @@ const SCOREBOARD_LEAGUES: ScoreboardLeague[] = [
   {
     label: 'NFL',
     url: 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard',
-    keywords: ['nfl', 'football'],
+    keywords: ['nfl', 'super bowl', 'touchdown'],
   },
   {
     label: 'NHL',
@@ -82,9 +82,14 @@ const SCOREBOARD_LEAGUES: ScoreboardLeague[] = [
     keywords: ['mls'],
   },
   {
+    label: 'Soccer',
+    url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard',
+    keywords: ['soccer', 'futbol', 'futebol'],
+  },
+  {
     label: 'FIFA World Cup',
     url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard',
-    keywords: ['world cup', 'copa del mundo', 'mundial', 'fifa', 'soccer', 'futbol', 'football'],
+    keywords: ['world cup', 'copa del mundo', 'mundial', 'fifa world'],
   },
 ]
 
@@ -247,6 +252,15 @@ function getLocalDateKey(date: Date): string {
   }).format(date)
 }
 
+function getEspnDatesParam(date = new Date()): string {
+  return getLocalDateKey(date).replace(/-/g, '')
+}
+
+function buildScoreboardUrl(baseUrl: string, date = new Date()): string {
+  const separator = baseUrl.includes('?') ? '&' : '?'
+  return `${baseUrl}${separator}dates=${getEspnDatesParam(date)}`
+}
+
 function formatEventTime(dateString: string): string {
   return new Intl.DateTimeFormat('en-US', {
     timeZone: APP_TIME_ZONE,
@@ -313,7 +327,7 @@ function isNewsRequest(message: string, history: HistoryMessage[]): boolean {
 function isScheduleRequest(message: string): boolean {
   const text = normalizeText(message)
 
-  return [
+  const explicitSchedulePhrases = [
     'games today',
     'today games',
     "today's games",
@@ -322,8 +336,13 @@ function isScheduleRequest(message: string): boolean {
     'schedule today',
     'who plays today',
     'partidos hoy',
+    'partidos de hoy',
     'juegos hoy',
+    'juegos de hoy',
     'quien juega hoy',
+    'resultados de hoy',
+    'marcadores de hoy',
+    'calendario hoy',
     'como va',
     'como van',
     'cuanto va',
@@ -343,7 +362,20 @@ function isScheduleRequest(message: string): boolean {
     'mlb today',
     'nfl today',
     'nhl today',
-  ].some((keyword) => text.includes(keyword))
+    'mls today',
+    'mundial hoy',
+  ]
+
+  if (explicitSchedulePhrases.some((keyword) => text.includes(keyword))) {
+    return true
+  }
+
+  const mentionsToday = /\bhoy\b|\btoday\b|\beste dia\b|\bthis evening\b/.test(text)
+  const mentionsGames = /partido|juego|game|match|fixture|schedule|marcador|resultado|score|en vivo|play(?:s|ing)?/.test(
+    text
+  )
+
+  return mentionsToday && mentionsGames
 }
 
 function isSpanishMessage(message: string): boolean {
@@ -380,17 +412,93 @@ function isLiveScoreRequest(message: string): boolean {
   ].some((keyword) => text.includes(keyword))
 }
 
-function selectScoreboardLeagues(message: string, history: HistoryMessage[]): ScoreboardLeague[] {
-  const recentContext = history
-    .slice(-4)
-    .map((item) => item.content)
-    .join(' ')
-  const text = normalizeText(`${recentContext} ${message}`)
+function isScheduleFollowUp(message: string): boolean {
+  const text = normalizeText(message)
+
+  return (
+    text === 'hoy' ||
+    text === 'today' ||
+    ['y hoy', 'que hay hoy', 'and today', 'what about today', 'otros deportes', 'mas deportes'].some(
+      (keyword) => text.includes(keyword)
+    )
+  )
+}
+
+function matchScoreboardLeagues(text: string): ScoreboardLeague[] {
   const selected = SCOREBOARD_LEAGUES.filter((league) =>
     league.keywords.some((keyword) => text.includes(keyword))
   )
 
-  return selected.length > 0 ? selected : SCOREBOARD_LEAGUES
+  if (
+    selected.length === 0 &&
+    text.includes('football') &&
+    !text.includes('soccer') &&
+    !text.includes('futbol')
+  ) {
+    const nfl = SCOREBOARD_LEAGUES.find((league) => league.label === 'NFL')
+    return nfl ? [nfl] : []
+  }
+
+  return selected
+}
+
+function selectScoreboardLeagues(message: string, history: HistoryMessage[]): ScoreboardLeague[] {
+  const messageText = normalizeText(message)
+  const selectedFromMessage = matchScoreboardLeagues(messageText)
+
+  if (selectedFromMessage.length > 0) {
+    return selectedFromMessage
+  }
+
+  if (isScheduleFollowUp(message)) {
+    const recentContext = history
+      .slice(-4)
+      .map((item) => item.content)
+      .join(' ')
+    const selectedFromHistory = matchScoreboardLeagues(normalizeText(recentContext))
+
+    if (selectedFromHistory.length > 0) {
+      return selectedFromHistory
+    }
+  }
+
+  return SCOREBOARD_LEAGUES.filter((league) => league.label !== 'FIFA World Cup')
+}
+
+function balanceEventsByLeague(events: SportsEvent[], maxTotal = 15, maxPerLeague = 4): SportsEvent[] {
+  const grouped = new Map<string, SportsEvent[]>()
+
+  for (const event of events) {
+    const bucket = grouped.get(event.league) || []
+    bucket.push(event)
+    grouped.set(event.league, bucket)
+  }
+
+  const balanced: SportsEvent[] = []
+  let index = 0
+
+  while (balanced.length < maxTotal) {
+    let added = false
+
+    for (const bucket of grouped.values()) {
+      if (index < bucket.length && index < maxPerLeague) {
+        balanced.push(bucket[index])
+        added = true
+
+        if (balanced.length >= maxTotal) {
+          break
+        }
+      }
+    }
+
+    if (!added) {
+      break
+    }
+
+    index += 1
+  }
+
+  return balanced
 }
 
 function cleanDescription(description: string): string {
@@ -514,7 +622,7 @@ async function getScheduleReply(message: string, history: HistoryMessage[]): Pro
   const results = await Promise.all(
     leagues.map(async (league) => {
       try {
-        const response = await fetch(league.url, {
+        const response = await fetch(buildScoreboardUrl(league.url), {
           next: { revalidate: 120 },
         })
 
@@ -531,7 +639,8 @@ async function getScheduleReply(message: string, history: HistoryMessage[]): Pro
   )
   const allEvents = results.flat()
   const liveEvents = allEvents.filter((event) => event.state === 'in')
-  const events = (wantsLiveScore && liveEvents.length > 0 ? liveEvents : allEvents).slice(0, 12)
+  const candidateEvents = wantsLiveScore && liveEvents.length > 0 ? liveEvents : allEvents
+  const events = balanceEventsByLeague(candidateEvents)
 
   if (events.length === 0) {
     return spanish
@@ -715,7 +824,8 @@ export async function POST(request: Request) {
       'Always reply in the same language as the user\'s last message (match the user\'s language, e.g. Spanish or English).',
       'Be concise, clear, and practical.',
       'Do not use raw Markdown tables. Prefer short paragraphs or numbered lists with plain URLs.',
-      'If the user asks for fresh schedules, scores, or live games, tell them to use "games today" so ESPN scoreboard data can be used.',
+      'Never invent live scores, schedules, or match results. If the user asks for today\'s games, scores, or live results, tell them to ask with "partidos de hoy" or "games today" so ESPN scoreboard data can be used.',
+      `Today's local date (${APP_TIME_ZONE}) is ${getLocalDateKey(new Date())}. Do not assume any match is today unless you have verified ESPN data.`,
       'If useful, use these recent ESPN headlines as context:',
       sportsContext || 'No recent headlines were available.',
     ].join('\n')
